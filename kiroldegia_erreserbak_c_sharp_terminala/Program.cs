@@ -407,4 +407,104 @@ public class Program
         }
     }
 
+    // =========================================================================
+    // 3 & 4. ERRESERBA EZABATU (SOFT DELETE vs HARD DELETE)
+    // =========================================================================
+    private static async Task EzabatuErreserbaAsync(bool hard)
+    {
+        string mota = hard ? "HARD DELETE (Behin betiko ezabatu)" : "SOFT DELETE (Logikoki ezabatu, pista askatu)";
+        Console.ForegroundColor = hard ? ConsoleColor.Red : ConsoleColor.Yellow;
+        Console.WriteLine($"--- ERRESERBA EZABATU: {mota} ---");
+        Console.ResetColor();
+
+        await ErakutsiErreserbakAsync();
+
+        Console.Write($"\nSartu ezabatu nahi duzun erreserbaren ID-a: ");
+        if (!int.TryParse(Console.ReadLine(), out int erreserbaId) || erreserbaId <= 0)
+        {
+            Console.WriteLine("ID baliogabea. Eragiketa bertan behera utzi da.");
+            return;
+        }
+
+        if (hard)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Write($"KONTUZ: [{erreserbaId}] erreserba datu-basetik FISIKOKI desagertuko da. Ziur zaude? (b/E): ");
+            Console.ResetColor();
+            string? berretsi = Console.ReadLine()?.Trim().ToLower();
+            if (berretsi is not ("b" or "bai" or "s" or "y"))
+            {
+                Console.WriteLine("Ezabaketa ezeztatua.");
+                return;
+            }
+        }
+
+        await using var kon = await SortuKonexioaAsync();
+        await using var tx = await kon.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+
+        try
+        {
+            var cmdCheck = new MySqlCommand("SELECT id, ezabatua FROM erreserba WHERE id = @id FOR UPDATE;", kon, tx);
+            cmdCheck.Parameters.AddWithValue("@id", erreserbaId);
+            using (var reader = await cmdCheck.ExecuteReaderAsync())
+            {
+                if (!await reader.ReadAsync())
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Ez da aurkitu [{erreserbaId}] ID-a duen erreserbarik.");
+                    Console.ResetColor();
+                    await tx.RollbackAsync();
+                    return;
+                }
+
+                bool jadaEzabatua = reader.GetBoolean("ezabatua");
+                if (!hard && jadaEzabatua)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"[{erreserbaId}] erreserba lehendik ere Soft-Delete eginda dago.");
+                    Console.ResetColor();
+                    await tx.RollbackAsync();
+                    return;
+                }
+            }
+
+            if (hard)
+            {
+                var cmdHard = new MySqlCommand("DELETE FROM erreserba WHERE id = @id;", kon, tx);
+                cmdHard.Parameters.AddWithValue("@id", erreserbaId);
+                await cmdHard.ExecuteNonQueryAsync();
+
+                await tx.CommitAsync();
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\n[HARD DELETE EGINDA] [{erreserbaId}] erreserba behin betiko ezabatu da datu-basetik.");
+                Console.ResetColor();
+            }
+            else
+            {
+                var cmdSoft = new MySqlCommand(@"
+                    UPDATE erreserba 
+                    SET ezabatua = TRUE, ezabaketa_data = NOW() 
+                    WHERE id = @id;", kon, tx);
+                cmdSoft.Parameters.AddWithValue("@id", erreserbaId);
+                await cmdSoft.ExecuteNonQueryAsync();
+
+                await tx.CommitAsync();
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\n[SOFT DELETE EGINDA] [{erreserbaId}] erreserba logikoki ezabatu da!");
+                Console.WriteLine("-> Erregistroa taulan geratzen da ikuskatzeko, baina pista libre geratu da besteentzat.");
+                Console.ResetColor();
+            }
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"\n[ERROREA] Eragiketa desegin da: {ex.Message}");
+            Console.ResetColor();
+        }
+    }
+
+    // =========================================================================
 }
