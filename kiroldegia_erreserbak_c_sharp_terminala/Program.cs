@@ -739,4 +739,156 @@ public class Program
                 int delE = await cmdDelE.ExecuteNonQueryAsync();
 
                 var cmdDelP = new MySqlCommand("DELETE FROM pista WHERE id = @id;", kon, tx);
+                cmdDelP.Parameters.AddWithValue("@id", pistaId);
+                await cmdDelP.ExecuteNonQueryAsync();
+
+                await tx.CommitAsync();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\n[HARD DELETE ARRAKASTA] '{pIzena}' pista eta bere {delE} erreserba behin betiko ezabatu dira!");
+                Console.ResetColor();
+            }
+            else if (ekintza == "3") // RESTORE
+            {
+                if (!pEzab)
+                {
+                    Console.WriteLine("Pista aktibo dago jada.");
+                    await tx.RollbackAsync();
+                    return;
+                }
+
+                var cmdRestore = new MySqlCommand("UPDATE pista SET ezabatua = FALSE, ezabaketa_data = NULL WHERE id = @id;", kon, tx);
+                cmdRestore.Parameters.AddWithValue("@id", pistaId);
+                await cmdRestore.ExecuteNonQueryAsync();
+
+                await tx.CommitAsync();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\n[BERRESKURATUA] '{pIzena}' pista berriro aktibo dago!");
+                Console.ResetColor();
+            }
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Errorea: {ex.Message}");
+            Console.ResetColor();
+        }
+    }
+
+    // =========================================================================
+    // 7. BONOEN KUDEAKETA (IKUSI, KARGATU SAIOAK TRANSAKZIOAN)
+    // =========================================================================
+    private static async Task KudeatuBonoakMenuAsync()
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("====================================================================");
+        Console.WriteLine("           BONOEN KUDEAKETA: SAIOAK IKUSI ETA KARGATU               ");
+        Console.WriteLine("====================================================================");
+        Console.ResetColor();
+
+        await using var kon = await SortuKonexioaAsync();
+
+        // Zerrendatu
+        Console.WriteLine("EGUNGO BONOAK:");
+        var cmdB = new MySqlCommand("SELECT emaila, saioak FROM bonoak ORDER BY emaila;", kon);
+        using (var reader = await cmdB.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                string email = reader.GetString("emaila");
+                int saioak = reader.GetInt32("saioak");
+                Console.WriteLine($"  * {email,-25} -> {saioak} saio");
+            }
+        }
+
+        Console.WriteLine("\nEkintza:");
+        Console.WriteLine("  1. Bonoari saioak kargatu (Transakzioa + FOR UPDATE)");
+        Console.WriteLine("  2. Bono berria sortu");
+        Console.WriteLine("  0. Itzuli");
+        Console.Write("Aukeratu (0-2): ");
+        string? auk = Console.ReadLine()?.Trim();
+        if (auk == "1")
+        {
+            Console.Write("Sartu emaila: ");
+            string? email = Console.ReadLine()?.Trim().ToLower();
+            Console.Write("Zenbat saio gehitu nahi dituzu? (adib. 5): ");
+            if (!int.TryParse(Console.ReadLine(), out int gehitukoDira) || gehitukoDira <= 0)
+            {
+                Console.WriteLine("Saio kopuru baliogabea.");
+                return;
+            }
+
+            await using var tx = await kon.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+            try
+            {
+                var cmdLock = new MySqlCommand("SELECT saioak FROM bonoak WHERE emaila = @email FOR UPDATE;", kon, tx);
+                cmdLock.Parameters.AddWithValue("@email", email);
+                var saioakObj = await cmdLock.ExecuteScalarAsync();
+                if (saioakObj == null)
+                {
+                    Console.WriteLine("Ez da aurkitu bonorik email horrekin.");
+                    await tx.RollbackAsync();
+                    return;
+                }
+
+                int lehen = Convert.ToInt32(saioakObj);
+                int berria = lehen + gehitukoDira;
+
+                var cmdUp = new MySqlCommand("UPDATE bonoak SET saioak = @saioak WHERE emaila = @email;", kon, tx);
+                cmdUp.Parameters.AddWithValue("@saioak", berria);
+                cmdUp.Parameters.AddWithValue("@email", email);
+                await cmdUp.ExecuteNonQueryAsync();
+
+                await tx.CommitAsync();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\n[ARRAKASTA] {email} bonoari +{gehitukoDira} saio gehitu zaizkio! Saio berriak: {berria}");
+                Console.ResetColor();
+            }
+            catch (Exception ex)
+            {
+                await tx.RollbackAsync();
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"Errorea: {ex.Message}");
+                Console.ResetColor();
+            }
+        }
+        else if (auk == "2")
+        {
+            Console.Write("Sartu email berria: ");
+            string? email = Console.ReadLine()?.Trim().ToLower();
+            Console.Write("Hasierako saio kopurua: ");
+            if (!int.TryParse(Console.ReadLine(), out int hasierakoa) || hasierakoa < 0)
+            {
+                Console.WriteLine("Kopuru baliogabea.");
+                return;
+            }
+
+            var cmdInsert = new MySqlCommand("INSERT INTO bonoak (emaila, saioak) VALUES (@email, @saioak) ON DUPLICATE KEY UPDATE saioak = saioak + @saioak;", kon);
+            cmdInsert.Parameters.AddWithValue("@email", email);
+            cmdInsert.Parameters.AddWithValue("@saioak", hasierakoa);
+            await cmdInsert.ExecuteNonQueryAsync();
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"Bonoa ondo erregistratu da ({email}: {hasierakoa} saio).");
+            Console.ResetColor();
+        }
+    }
+
+    // =========================================================================
+    // 8. ERRESERBA TAULA GARBITU
+    // =========================================================================
+    private static async Task GarbituTaulaAsync()
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Write("Ziur zaude ERRESERBA GUZTIAK ezabatu nahi dituzula (DELETE FROM erreserba)? (b/E): ");
+        Console.ResetColor();
+        string? resp = Console.ReadLine()?.Trim().ToLower();
+        if (resp is "b" or "bai" or "s" or "y")
+        {
+            await using var kon = await SortuKonexioaAsync();
+            var cmd = new MySqlCommand("DELETE FROM erreserba;", kon);
+            int kop = await cmd.ExecuteNonQueryAsync();
+            Console.WriteLine($"\n-> Taula garbitu da ({kop} errenkada ezabatuta).");
+        }
+    }
 }
