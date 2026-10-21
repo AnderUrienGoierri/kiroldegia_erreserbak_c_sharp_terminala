@@ -579,4 +579,164 @@ public class Program
             // Pista bera desgaituta ez dagoela egiaztatu
             var cmdPista = new MySqlCommand("SELECT ezabatua FROM pista WHERE id = @p FOR UPDATE;", kon, tx);
             cmdPista.Parameters.AddWithValue("@p", pistaId);
+            bool pistaEzab = Convert.ToBoolean(await cmdPista.ExecuteScalarAsync());
+            if (pistaEzab)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("[EZIN DA BERRESKURATU] Pista bera desgaituta (Soft-Delete) dago!");
+                Console.ResetColor();
+                await tx.RollbackAsync();
+                return;
+            }
+
+            // Hutsunea tartean beste batek hartu ote duen egiaztatu
+            var cmdCheck = new MySqlCommand(@"
+                SELECT COUNT(*) FROM erreserba 
+                WHERE pista_id = @p AND data = @d AND ordua = @o AND ezabatua = FALSE AND id != @id 
+                FOR UPDATE;", kon, tx);
+            cmdCheck.Parameters.AddWithValue("@p", pistaId);
+            cmdCheck.Parameters.AddWithValue("@d", data);
+            cmdCheck.Parameters.AddWithValue("@o", ordua);
+            cmdCheck.Parameters.AddWithValue("@id", id);
+
+            long okupatua = Convert.ToInt64(await cmdCheck.ExecuteScalarAsync());
+            if (okupatua > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("[EZIN DA BERRESKURATU] Tartean beste norbaitek erreserbatu du pista eta ordu bera!");
+                Console.ResetColor();
+                await tx.RollbackAsync();
+                return;
+            }
+
+            var cmdRestore = new MySqlCommand(@"
+                UPDATE erreserba 
+                SET ezabatua = FALSE, ezabaketa_data = NULL 
+                WHERE id = @id;", kon, tx);
+            cmdRestore.Parameters.AddWithValue("@id", id);
+            await cmdRestore.ExecuteNonQueryAsync();
+
+            await tx.CommitAsync();
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"\n[BERRESKURATUA] [{id}] erreserba berriro aktibo dago!");
+            Console.ResetColor();
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Errorea berreskuratzean: {ex.Message}");
+            Console.ResetColor();
+        }
+    }
+
+    // =========================================================================
+    // 6. PISTEN KUDEAKETA (SOFT DELETE, HARD DELETE, RESTORE)
+    // =========================================================================
+    private static async Task KudeatuPistakMenuAsync()
+    {
+        Console.ForegroundColor = ConsoleColor.Magenta;
+        Console.WriteLine("====================================================================");
+        Console.WriteLine("   PISTEN KUDEAKETA: SOFT DELETE (ERRESERBAK DESGAITU) & HARD DELETE");
+        Console.WriteLine("====================================================================");
+        Console.ResetColor();
+
+        await using var kon = await SortuKonexioaAsync();
+
+        // Pistak zerrendatu
+        Console.WriteLine("EGUNGO PISTAK:");
+        var cmdP = new MySqlCommand("SELECT id, izena, kirola, ezabatua, ezabaketa_data FROM pista ORDER BY id;", kon);
+        using (var reader = await cmdP.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                int id = reader.GetInt32("id");
+                string izena = reader.GetString("izena");
+                string kirola = reader.GetString("kirola");
+                bool ezab = reader.GetBoolean("ezabatua");
+                string egoera = ezab ? $"[SOFT-DELETE DESGAITUTA] ({reader["ezabaketa_data"]})" : "[AKTIBOA]";
+                Console.ForegroundColor = ezab ? ConsoleColor.DarkGray : ConsoleColor.Green;
+                Console.WriteLine($"  [{id}] {izena,-14} | {kirola,-10} | {egoera}");
+                Console.ResetColor();
+            }
+        }
+
+        Console.WriteLine("\nEkintza:");
+        Console.WriteLine("  1. Pista SOFT DELETE egin (Pistarekin erlazionatutako erreserbak desgaitu!)");
+        Console.WriteLine("  2. Pista HARD DELETE egin (Pista eta erreserbak behin betiko ezabatu)");
+        Console.WriteLine("  3. Pista BERRESKURATU (Restore)");
+        Console.WriteLine("  0. Itzuli");
+        Console.Write("Aukeratu (0-3): ");
+        string? ekintza = Console.ReadLine()?.Trim();
+        if (ekintza is not ("1" or "2" or "3")) return;
+
+        Console.Write("Sartu pistaren ID-a: ");
+        if (!int.TryParse(Console.ReadLine(), out int pistaId) || pistaId <= 0)
+        {
+            Console.WriteLine("ID baliogabea.");
+            return;
+        }
+
+        await using var tx = await kon.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+        try
+        {
+            var cmdCheck = new MySqlCommand("SELECT id, izena, ezabatua FROM pista WHERE id = @id FOR UPDATE;", kon, tx);
+            cmdCheck.Parameters.AddWithValue("@id", pistaId);
+            string pIzena = "";
+            bool pEzab = false;
+            using (var r = await cmdCheck.ExecuteReaderAsync())
+            {
+                if (!await r.ReadAsync())
+                {
+                    Console.WriteLine("Ez da aurkitu pistarik.");
+                    await tx.RollbackAsync();
+                    return;
+                }
+                pIzena = r.GetString("izena");
+                pEzab = r.GetBoolean("ezabatua");
+            }
+
+            if (ekintza == "1") // SOFT DELETE
+            {
+                if (pEzab)
+                {
+                    Console.WriteLine($"[{pistaId}] {pIzena} pista jada Soft-Delete eginda dago.");
+                    await tx.RollbackAsync();
+                    return;
+                }
+
+                // 1) Pista ezabatu
+                var cmdSoftPista = new MySqlCommand("UPDATE pista SET ezabatua = TRUE, ezabaketa_data = NOW() WHERE id = @id;", kon, tx);
+                cmdSoftPista.Parameters.AddWithValue("@id", pistaId);
+                await cmdSoftPista.ExecuteNonQueryAsync();
+
+                // 2) Erlazionatutako erreserbak desgaitu (PDF eskakizuna!)
+                var cmdSoftErreserbak = new MySqlCommand("UPDATE erreserba SET ezabatua = TRUE, ezabaketa_data = NOW() WHERE pista_id = @id AND ezabatua = FALSE;", kon, tx);
+                cmdSoftErreserbak.Parameters.AddWithValue("@id", pistaId);
+                int desgaituKop = await cmdSoftErreserbak.ExecuteNonQueryAsync();
+
+                await tx.CommitAsync();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\n[SOFT DELETE ARRAKASTA] '{pIzena}' pista desgaitu da eta erlazionatutako {desgaituKop} erreserba desgaitu dira!");
+                Console.ResetColor();
+            }
+            else if (ekintza == "2") // HARD DELETE
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Write($"KONTUZ: [{pistaId}] {pIzena} pista eta bere erreserba guztiak FISIKOKI ezabatuko dira. Ziur? (b/E): ");
+                Console.ResetColor();
+                string? b = Console.ReadLine()?.Trim().ToLower();
+                if (b is not ("b" or "bai" or "s" or "y"))
+                {
+                    Console.WriteLine("Ezeztatua.");
+                    await tx.RollbackAsync();
+                    return;
+                }
+
+                var cmdDelE = new MySqlCommand("DELETE FROM erreserba WHERE pista_id = @id;", kon, tx);
+                cmdDelE.Parameters.AddWithValue("@id", pistaId);
+                int delE = await cmdDelE.ExecuteNonQueryAsync();
+
+                var cmdDelP = new MySqlCommand("DELETE FROM pista WHERE id = @id;", kon, tx);
 }
