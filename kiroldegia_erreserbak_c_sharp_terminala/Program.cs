@@ -507,4 +507,76 @@ public class Program
     }
 
     // =========================================================================
+    // 5. SOFT DELETE EGITEKO ERRESERBA BERRESKURATU (RESTORE)
+    // =========================================================================
+    private static async Task BerreskuratuErreserbaAsync()
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine("--- SOFT-DELETE EGITEKO ERRESERBAK BERRESKURATU (RESTORE) ---");
+        Console.ResetColor();
+
+        await using var kon = await SortuKonexioaAsync();
+
+        var cmdList = new MySqlCommand(@"
+            SELECT e.id, p.izena AS pista, CONCAT(b.izena, ' ', b.abizena) AS bazkidea, e.data, e.ordua, e.ezabaketa_data
+            FROM erreserba e
+            JOIN pista p ON e.pista_id = p.id
+            JOIN bazkidea b ON e.bazkidea_id = b.id
+            WHERE e.ezabatua = TRUE
+            ORDER BY e.data, e.ordua;", kon);
+
+        bool badago = false;
+        using (var reader = await cmdList.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                badago = true;
+                Console.WriteLine($"  [{reader["id"]}] {reader["pista"]} | {reader["bazkidea"]} | {Convert.ToDateTime(reader["data"]):yyyy-MM-dd} {reader["ordua"]} (Ezabatua: {reader["ezabaketa_data"]})");
+            }
+        }
+
+        if (!badago)
+        {
+            Console.WriteLine("Ez dago Soft-Delete egindako erreserbarik berreskuratzeko.");
+            return;
+        }
+
+        Console.Write("\nSartu berreskuratu nahi duzun erreserbaren ID-a: ");
+        if (!int.TryParse(Console.ReadLine(), out int id) || id <= 0)
+        {
+            Console.WriteLine("ID baliogabea.");
+            return;
+        }
+
+        await using var tx = await kon.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+        try
+        {
+            int pistaId;
+            string data;
+            string ordua;
+
+            var cmdGet = new MySqlCommand("SELECT pista_id, data, ordua, ezabatua FROM erreserba WHERE id = @id FOR UPDATE;", kon, tx);
+            cmdGet.Parameters.AddWithValue("@id", id);
+            using (var r = await cmdGet.ExecuteReaderAsync())
+            {
+                if (!await r.ReadAsync())
+                {
+                    Console.WriteLine("Ez da aurkitu erreserbarik.");
+                    await tx.RollbackAsync();
+                    return;
+                }
+                if (!r.GetBoolean("ezabatua"))
+                {
+                    Console.WriteLine("Erreserba hau aktibo dago jada.");
+                    await tx.RollbackAsync();
+                    return;
+                }
+                pistaId = r.GetInt32("pista_id");
+                data = Convert.ToDateTime(r["data"]).ToString("yyyy-MM-dd");
+                ordua = r["ordua"].ToString() ?? "";
+            }
+
+            // Pista bera desgaituta ez dagoela egiaztatu
+            var cmdPista = new MySqlCommand("SELECT ezabatua FROM pista WHERE id = @p FOR UPDATE;", kon, tx);
+            cmdPista.Parameters.AddWithValue("@p", pistaId);
 }
