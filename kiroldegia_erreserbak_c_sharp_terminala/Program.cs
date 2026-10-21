@@ -344,4 +344,67 @@ public class Program
             Console.ResetColor();
         }
     }
+
+    // =========================================================================
+    // 2. EGUN DAUDEN ERRESERBAK IKUSI (AKTIBOAK ETA SOFT-DELETE EZABATUAK)
+    // =========================================================================
+    private static async Task ErakutsiErreserbakAsync()
+    {
+        await using var kon = await SortuKonexioaAsync();
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine("--- EGUNGO ERRESERBAK (AKTIBOAK ETA SOFT-DELETE) ---");
+        Console.ResetColor();
+
+        var cmd = new MySqlCommand(@"
+            SELECT e.id, p.izena AS pista, p.kirola, CONCAT(b.izena, ' ', b.abizena) AS bazkidea, 
+                   e.data, e.ordua, e.ezabatua, e.ezabaketa_data
+            FROM erreserba e
+            JOIN pista p ON e.pista_id = p.id
+            JOIN bazkidea b ON e.bazkidea_id = b.id
+            ORDER BY e.data, e.ordua, e.id;", kon);
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        bool badago = false;
+
+        Console.WriteLine(string.Format("{0,-5} | {1,-12} | {2,-18} | {3,-10} | {4,-8} | {5}",
+            "ID", "PISTA", "BAZKIDEA", "DATA", "ORDUA", "EGOERA"));
+        Console.WriteLine(new string('-', 85));
+
+        while (await reader.ReadAsync())
+        {
+            badago = true;
+            int id = reader.GetInt32("id");
+            string pista = reader.GetString("pista");
+            string bazkidea = reader.GetString("bazkidea");
+            string data = Convert.ToDateTime(reader["data"]).ToString("yyyy-MM-dd");
+            string ordua = reader["ordua"].ToString() ?? "";
+            bool ezabatua = reader.GetBoolean("ezabatua");
+
+            if (ezabatua)
+            {
+                string ezabData = reader.IsDBNull(reader.GetOrdinal("ezabaketa_data"))
+                    ? ""
+                    : $"({Convert.ToDateTime(reader["ezabaketa_data"]):yyyy-MM-dd HH:mm})";
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine(string.Format("{0,-5} | {1,-12} | {2,-18} | {3,-10} | {4,-8} | [SOFT-DELETE EZABATUA] {5}",
+                    id, pista, bazkidea, data, ordua, ezabData));
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine(string.Format("{0,-5} | {1,-12} | {2,-18} | {3,-10} | {4,-8} | AKTIBOA",
+                    id, pista, bazkidea, data, ordua));
+                Console.ResetColor();
+            }
+        }
+
+        if (!badago)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("  (Ez dago erreserbarik taulan une honetan)");
+            Console.ResetColor();
+        }
+    }
+
 }
