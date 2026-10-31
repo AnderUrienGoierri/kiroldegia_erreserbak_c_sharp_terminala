@@ -3,6 +3,7 @@
 Ordiziako Majori Kiroldegiko erreserbak kudeatzeko C# aplikazio modularra (.NET 10.0-windows).
 
 Aplikazio honek **bi exekuzio modu** eskaintzen ditu bateragarritasun osoz:
+
 1. **Terminal modua (Kontsola / CLI):** Jatorrizko testu-menua, arina eta azkarra.
 2. **Interfaze Grafikoa (GUI - Windows Forms):** Leiho bisuala taula dinamikoekin (DataGridView), fitxekin (Bazkideak, Pistak, Erreserbak, Bonoak), kontrol-botoiekin eta formulario laguntzaileekin.
 
@@ -98,7 +99,7 @@ kiroldegia_erreserbak_c_sharp_terminala/
 │   └── Bonoa.cs                # BonoDTO eta BonoKargatuDTO
 │
 ├── database/
-│   └── kiroldegia_db.sql       # MySQL eskema (ON DELETE RESTRICT eta soft-delete zutabeekin)
+│   └── kiroldegia_db.sql       # MySQL eskema
 │
 └── doc/
     └── TRANSAKZIOAK_ETA_DELETE_JUSTIFIKAZIOA.md # Transakzioak eta ezabatze-moten justifikazio teknikoa
@@ -109,13 +110,16 @@ kiroldegia_erreserbak_c_sharp_terminala/
 ## 3. Aplikazioa Bi Modutara Abiaraztea
 
 ### A) Modu Interaktiboa (Menu bidez aukeratuz)
+
 Argumenturik gabe abiarazten denean, aplikazioak hasieran galdetzen du zein modu erabili:
+
 ```bash
 dotnet run
 ```
+
 ```text
 ====================================================================
-       ORDIZIAKO KIROLDEGIKO KUDEAKETA SISTEMA (C#)                 
+       ORDIZIAKO KIROLDEGIKO KUDEAKETA SISTEMA (C#)
 ====================================================================
 Aukeratu aplikazioa nola exekutatu nahi duzun:
 
@@ -123,22 +127,27 @@ Aukeratu aplikazioa nola exekutatu nahi duzun:
   2. Interfaze Grafikoa (GUI - Windows Forms)
   0. Irten
 --------------------------------------------------------------------
-Aukeratu [1/2/0] (Lehenetsia: 1): 
+Aukeratu [1/2/0] (Lehenetsia: 1):
 ```
 
 ### B) Zuzenean Interfaze Grafikoan (GUI)
+
 Komando-lerroko `--gui` edo `-g` parametroarekin:
+
 ```bash
 dotnet run -- --gui
 ```
 
 ### C) Zuzenean Terminal Moduan (CLI)
+
 Komando-lerroko `--cli` edo `-c` parametroarekin:
+
 ```bash
 dotnet run -- --cli
 ```
 
 ### D) Terminaletik Interfaze Grafikoara salto egitea
+
 Terminaleko menuan zaudela, `G` (edo `10`) sakatuta Windows Forms leihoa irekiko da uneoro. Leihoa ixtean, terminaleko menura itzultzen da automatikoki.
 
 ---
@@ -189,6 +198,7 @@ Proiektuak **Soft Delete** eredua lehenesten du eta datu-base mailan **ON DELETE
     ```
 
 Dokumentazio osoa hemen kontsulta daiteke:
+
 - Markdown formatuan: `doc/TRANSAKZIOAK_ETA_DELETE_JUSTIFIKAZIOA.md`
 - Word formatuan: `../1T_ARIKETA_2_API_KIROLDEGIA_WEB_C_SHARP/TRANSAKZIOAK_ETA_DELETE_JUSTIFIKAZIOA.docx`
 
@@ -197,17 +207,23 @@ Dokumentazio osoa hemen kontsulta daiteke:
 ## 6. Abiarazteko Argibideak
 
 ### 1. Backend REST APIa abiarazi
+
 Bezeroak datuak eskuratu ahal izateko, backend zerbitzaria martxan egon behar da:
+
 ```bash
 cd ../API_kiroldegia_db/API_kiroldegia_db
 dotnet run
 ```
+
 APIa `http://localhost:5089` helbidean jarriko da entzuten.
 
 ### 2. C# Bezeroa abiarazi
+
 Beste terminal batean:
+
 ```bash
 cd kiroldegia_erreserbak_c_sharp_terminala
 dotnet run
 ```
-*Oharra: APIa beste helbide batean balego, `KIROLDEGIA_API_URL` ingurune-aldagaia erabil daiteke (adibidez: `set KIROLDEGIA_API_URL=http://localhost:5262`).*
+
+_Oharra: APIa beste helbide batean balego, `KIROLDEGIA_API_URL` ingurune-aldagaia erabil daiteke (adibidez: `set KIROLDEGIA_API_URL=http://localhost:5262`)._

@@ -14,6 +14,7 @@ public class MainForm : Form
     private readonly System.Windows.Forms.Timer _konexioTenporizadorea = new();
 
     // Goiko panela
+    private readonly PictureBox _picLogo = new();
     private readonly Label _lblIzenburua = new();
     private readonly Label _lblApiEgoera = new();
     private readonly Button _btnEgiaztatuKonexioa = new();
@@ -64,64 +65,72 @@ public class MainForm : Form
         var pnlHeader = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 72,
+            Height = 78,
             BackColor = Color.FromArgb(44, 62, 80),
-            Padding = new Padding(15, 8, 15, 8)
+            Padding = new Padding(12, 6, 12, 6)
         };
 
-        var pnlButtons = new FlowLayoutPanel
+        // Eskuineko botoiak: Panel finko batean kokatuta (lerro/fila berean beti, inolako jauzirik gabe)
+        var pnlButtons = new Panel
         {
             Dock = DockStyle.Right,
-            AutoSize = true,
-            FlowDirection = FlowDirection.LeftToRight,
-            Padding = new Padding(0, 10, 0, 0),
+            Width = 285,
             BackColor = Color.Transparent
         };
 
-        var pnlTitles = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.Transparent,
-            Padding = new Padding(0, 4, 0, 0)
-        };
-
-        _lblIzenburua.Text = "ORDIZIAKO KIROLDEGIKO KUDEAKETA SISTEMA";
-        _lblIzenburua.Font = new Font("Segoe UI", 12F, FontStyle.Bold);
-        _lblIzenburua.ForeColor = Color.White;
-        _lblIzenburua.Location = new Point(0, 2);
-        _lblIzenburua.AutoSize = true;
-
-        _lblApiEgoera.Text = $"API Konexioa: Egiaztatzen ({_api.BaseUrl})...";
-        _lblApiEgoera.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
-        _lblApiEgoera.ForeColor = Color.FromArgb(241, 196, 15);
-        _lblApiEgoera.Location = new Point(0, 32);
-        _lblApiEgoera.AutoSize = true;
-
-        pnlTitles.Controls.Add(_lblIzenburua);
-        pnlTitles.Controls.Add(_lblApiEgoera);
-
         _btnEgiaztatuKonexioa.Text = "Egiaztatu Konexioa";
-        _btnEgiaztatuKonexioa.Size = new Size(150, 32);
+        _btnEgiaztatuKonexioa.Location = new Point(5, 20);
+        _btnEgiaztatuKonexioa.Size = new Size(150, 36);
         _btnEgiaztatuKonexioa.BackColor = Color.FromArgb(52, 152, 219);
         _btnEgiaztatuKonexioa.ForeColor = Color.White;
         _btnEgiaztatuKonexioa.FlatStyle = FlatStyle.Flat;
         _btnEgiaztatuKonexioa.Cursor = Cursors.Hand;
+        _btnEgiaztatuKonexioa.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         _btnEgiaztatuKonexioa.Click += async (s, e) => await EgiaztatuKonexioaAsync(eskuzkoa: true);
 
         _btnItzuliTerminalera.Text = "Irten / Itzuli";
-        _btnItzuliTerminalera.Size = new Size(110, 32);
+        _btnItzuliTerminalera.Location = new Point(165, 20);
+        _btnItzuliTerminalera.Size = new Size(110, 36);
         _btnItzuliTerminalera.BackColor = Color.FromArgb(127, 140, 141);
         _btnItzuliTerminalera.ForeColor = Color.White;
         _btnItzuliTerminalera.FlatStyle = FlatStyle.Flat;
         _btnItzuliTerminalera.Cursor = Cursors.Hand;
+        _btnItzuliTerminalera.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         _btnItzuliTerminalera.Click += (s, e) => Close();
 
         pnlButtons.Controls.Add(_btnEgiaztatuKonexioa);
         pnlButtons.Controls.Add(_btnItzuliTerminalera);
 
-        // WinForms-en eskuineko panela lehenik gehitu behar da dock zuzen funtzionatzeko
+        // Ezkerreko Logoa (majori-kiroldegia.jpg)
+        _picLogo.Size = new Size(62, 62);
+        _picLogo.Location = new Point(14, 8);
+        _picLogo.SizeMode = PictureBoxSizeMode.Zoom;
+        _picLogo.BackColor = Color.Transparent;
+
+        var logoImg = KargatuLogoIrudia();
+        if (logoImg != null)
+        {
+            _picLogo.Image = logoImg;
+        }
+
+        // Goiko izenburuak eta egoera etiketa
+        _lblIzenburua.Text = "ORDIZIAKO KIROLDEGIKO KUDEAKETA SISTEMA";
+        _lblIzenburua.Font = new Font("Segoe UI", 12F, FontStyle.Bold);
+        _lblIzenburua.ForeColor = Color.White;
+        _lblIzenburua.Location = new Point(86, 14);
+        _lblIzenburua.AutoSize = true;
+
+        _lblApiEgoera.Text = $"API Konexioa: Egiaztatzen ({_api.BaseUrl})...";
+        _lblApiEgoera.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        _lblApiEgoera.ForeColor = Color.FromArgb(241, 196, 15);
+        _lblApiEgoera.Location = new Point(86, 42);
+        _lblApiEgoera.AutoSize = true;
+
+        // Kontrolak panel nagusira gehitu
         pnlHeader.Controls.Add(pnlButtons);
-        pnlHeader.Controls.Add(pnlTitles);
+        pnlHeader.Controls.Add(_picLogo);
+        pnlHeader.Controls.Add(_lblIzenburua);
+        pnlHeader.Controls.Add(_lblApiEgoera);
 
         // --- Tabs ---
         _tabs.Dock = DockStyle.Fill;
@@ -166,6 +175,7 @@ public class MainForm : Form
         {
             _konexioTenporizadorea.Stop();
             _konexioTenporizadorea.Dispose();
+            _picLogo.Image?.Dispose();
         };
     }
 
@@ -480,6 +490,35 @@ public class MainForm : Form
 
     private static string FormatMezua<T>(ApiResult<T> res) =>
         string.IsNullOrEmpty(res.Xehetasuna) ? res.Mezua : $"{res.Mezua} ({res.Xehetasuna})";
+
+    private static Image? KargatuLogoIrudia()
+    {
+        string[] probatzekoBideak =
+        [
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "majori-kiroldegia.jpg"),
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "majori-kiroldegia.jpg"),
+            Path.Combine(Directory.GetCurrentDirectory(), "majori-kiroldegia.jpg"),
+            Path.Combine(Directory.GetCurrentDirectory(), "kiroldegia_erreserbak_c_sharp_terminala", "majori-kiroldegia.jpg"),
+            @"c:\Dev\GoierriEskola\2_maila\0486-Datu-atzipena\1_ebaluaketa\6-transakzioak\ariketak\10_jarraipena\kiroldegia_erreserbak_c_sharp_terminala\kiroldegia_erreserbak_c_sharp_terminala\majori-kiroldegia.jpg"
+        ];
+
+        foreach (var bidea in probatzekoBideak)
+        {
+            if (File.Exists(bidea))
+            {
+                try
+                {
+                    return Image.FromFile(bidea);
+                }
+                catch
+                {
+                    // Errorea badago fitxategia irakurtzean, saiatu hurrengoarekin
+                }
+            }
+        }
+
+        return null;
+    }
 
     // =========================================================================
     // API ERAGIKETAK ETA DATU KARGAK
