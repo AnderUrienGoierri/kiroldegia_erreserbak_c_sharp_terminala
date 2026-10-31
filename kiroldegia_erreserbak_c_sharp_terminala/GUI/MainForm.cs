@@ -8,6 +8,11 @@ public class MainForm : Form
 {
     private readonly KiroldegiaApiClient _api;
 
+    // Egoera kudeaketa eta tenporizadorea
+    private bool _konektatuta = false;
+    private bool _egiaztatzenAriDa = false;
+    private readonly System.Windows.Forms.Timer _konexioTenporizadorea = new();
+
     // Goiko panela
     private readonly Label _lblIzenburua = new();
     private readonly Label _lblApiEgoera = new();
@@ -59,42 +64,64 @@ public class MainForm : Form
         var pnlHeader = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 70,
+            Height = 72,
             BackColor = Color.FromArgb(44, 62, 80),
-            Padding = new Padding(15, 10, 15, 10)
+            Padding = new Padding(15, 8, 15, 8)
+        };
+
+        var pnlButtons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Padding = new Padding(0, 10, 0, 0),
+            BackColor = Color.Transparent
+        };
+
+        var pnlTitles = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, 4, 0, 0)
         };
 
         _lblIzenburua.Text = "ORDIZIAKO KIROLDEGIKO KUDEAKETA SISTEMA";
         _lblIzenburua.Font = new Font("Segoe UI", 12F, FontStyle.Bold);
         _lblIzenburua.ForeColor = Color.White;
-        _lblIzenburua.Location = new Point(15, 10);
+        _lblIzenburua.Location = new Point(0, 2);
         _lblIzenburua.AutoSize = true;
 
-        _lblApiEgoera.Text = $"API Helbidea: {_api.BaseUrl} | Konexioa egiaztatzen...";
-        _lblApiEgoera.Font = new Font("Segoe UI", 9F);
+        _lblApiEgoera.Text = $"API Konexioa: Egiaztatzen ({_api.BaseUrl})...";
+        _lblApiEgoera.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         _lblApiEgoera.ForeColor = Color.FromArgb(241, 196, 15);
-        _lblApiEgoera.Location = new Point(16, 38);
+        _lblApiEgoera.Location = new Point(0, 32);
         _lblApiEgoera.AutoSize = true;
 
-        _btnEgiaztatuKonexioa.Text = "Konexioa Egiaztatu";
+        pnlTitles.Controls.Add(_lblIzenburua);
+        pnlTitles.Controls.Add(_lblApiEgoera);
+
+        _btnEgiaztatuKonexioa.Text = "Egiaztatu Konexioa";
         _btnEgiaztatuKonexioa.Size = new Size(150, 32);
-        _btnEgiaztatuKonexioa.Location = new Point(740, 18);
-        _btnEgiaztatuKonexioa.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         _btnEgiaztatuKonexioa.BackColor = Color.FromArgb(52, 152, 219);
         _btnEgiaztatuKonexioa.ForeColor = Color.White;
         _btnEgiaztatuKonexioa.FlatStyle = FlatStyle.Flat;
-        _btnEgiaztatuKonexioa.Click += async (s, e) => await EgiaztatuKonexioaAsync();
+        _btnEgiaztatuKonexioa.Cursor = Cursors.Hand;
+        _btnEgiaztatuKonexioa.Click += async (s, e) => await EgiaztatuKonexioaAsync(eskuzkoa: true);
 
         _btnItzuliTerminalera.Text = "Irten / Itzuli";
-        _btnItzuliTerminalera.Size = new Size(120, 32);
-        _btnItzuliTerminalera.Location = new Point(900, 18);
-        _btnItzuliTerminalera.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _btnItzuliTerminalera.Size = new Size(110, 32);
         _btnItzuliTerminalera.BackColor = Color.FromArgb(127, 140, 141);
         _btnItzuliTerminalera.ForeColor = Color.White;
         _btnItzuliTerminalera.FlatStyle = FlatStyle.Flat;
+        _btnItzuliTerminalera.Cursor = Cursors.Hand;
         _btnItzuliTerminalera.Click += (s, e) => Close();
 
-        pnlHeader.Controls.AddRange([_lblIzenburua, _lblApiEgoera, _btnEgiaztatuKonexioa, _btnItzuliTerminalera]);
+        pnlButtons.Controls.Add(_btnEgiaztatuKonexioa);
+        pnlButtons.Controls.Add(_btnItzuliTerminalera);
+
+        // WinForms-en eskuineko panela lehenik gehitu behar da dock zuzen funtzionatzeko
+        pnlHeader.Controls.Add(pnlButtons);
+        pnlHeader.Controls.Add(pnlTitles);
 
         // --- Tabs ---
         _tabs.Dock = DockStyle.Fill;
@@ -111,6 +138,7 @@ public class MainForm : Form
         EraikiBonoakTab();
 
         _tabs.TabPages.AddRange([_tabBazkideak, _tabPistak, _tabErreserbak, _tabBonoak]);
+        _tabs.SelectedIndexChanged += async (s, e) => await FitxaAldaketaKudeatuAsync();
 
         // --- Status Strip ---
         _statusStrip.Items.Add(_statusLabel);
@@ -120,11 +148,115 @@ public class MainForm : Form
         Controls.Add(pnlHeader);
         Controls.Add(_statusStrip);
 
+        // --- Konexio Tenporizadorea (3 segunduro atzealdean automatikoki egiaztatzeko) ---
+        _konexioTenporizadorea.Interval = 3000;
+        _konexioTenporizadorea.Tick += async (s, e) => await EgiaztatuKonexioaAutomatikoaAsync();
+
         Load += async (s, e) =>
         {
-            await EgiaztatuKonexioaAsync();
-            await KargatuDatuGuztiakAsync();
+            await EgiaztatuKonexioaAsync(eskuzkoa: false);
+            if (_konektatuta)
+            {
+                await KargatuDatuGuztiakAsync();
+            }
+            _konexioTenporizadorea.Start();
         };
+
+        FormClosed += (s, e) =>
+        {
+            _konexioTenporizadorea.Stop();
+            _konexioTenporizadorea.Dispose();
+        };
+    }
+
+    // =========================================================================
+    // KONEXIO EGOERAREN KUDEAKETA AUTOMATIKOA
+    // =========================================================================
+    private void MarkatuKonektatuta()
+    {
+        _konektatuta = true;
+        _lblApiEgoera.Text = $"API Konexioa: KONEKTATUTA ({_api.BaseUrl})";
+        _lblApiEgoera.ForeColor = Color.FromArgb(46, 204, 113);
+    }
+
+    private void MarkatuDeskonektatuta(string? mezua = null)
+    {
+        _konektatuta = false;
+        string arrazoia = string.IsNullOrWhiteSpace(mezua) ? "Zerbitzaria itxita edo erantzun gabe" : mezua;
+        if (arrazoia.Length > 70) arrazoia = arrazoia[..67] + "...";
+        _lblApiEgoera.Text = $"API Konexioa: DESKONEKTATUTA ({arrazoia})";
+        _lblApiEgoera.ForeColor = Color.FromArgb(231, 76, 60);
+    }
+
+    private async Task EgiaztatuKonexioaAutomatikoaAsync()
+    {
+        if (_egiaztatzenAriDa) return;
+        _egiaztatzenAriDa = true;
+        try
+        {
+            var (egoera, mezua) = await _api.EgiaztatuKonexioaAsync();
+            if (egoera)
+            {
+                bool lehenDeskonektatuta = !_konektatuta;
+                MarkatuKonektatuta();
+                if (lehenDeskonektatuta)
+                {
+                    SetStatus("API zerbitzaria martxan jarri da. Datuak automatikoki kargatzen...");
+                    await KargatuDatuGuztiakAsync();
+                }
+            }
+            else
+            {
+                MarkatuDeskonektatuta(mezua);
+            }
+        }
+        finally
+        {
+            _egiaztatzenAriDa = false;
+        }
+    }
+
+    private async Task EgiaztatuKonexioaAsync(bool eskuzkoa = false)
+    {
+        if (eskuzkoa) SetStatus("API konexioa egiaztatzen...");
+        var (konektatuta, mezua) = await _api.EgiaztatuKonexioaAsync();
+        if (konektatuta)
+        {
+            bool lehenDeskonektatuta = !_konektatuta;
+            MarkatuKonektatuta();
+            SetStatus("APIa konektatuta eta erantzuteko prest.");
+            if (eskuzkoa || lehenDeskonektatuta)
+            {
+                await KargatuDatuGuztiakAsync();
+            }
+        }
+        else
+        {
+            MarkatuDeskonektatuta(mezua);
+            SetStatus($"Kontuz: ezin izan da APIarekin konektatu ({_api.BaseUrl}). Ziurtatu 'API_kiroldegia_db' martxan dagoela.");
+        }
+    }
+
+    private async Task FitxaAldaketaKudeatuAsync()
+    {
+        if (!_konektatuta) return;
+
+        if (_tabs.SelectedTab == _tabBazkideak && _azkenBazkideak.Count == 0)
+        {
+            await KargatuBazkideakAsync();
+        }
+        else if (_tabs.SelectedTab == _tabPistak && _azkenPistak.Count == 0)
+        {
+            await KargatuPistakAsync();
+        }
+        else if (_tabs.SelectedTab == _tabErreserbak && _gridErreserbak.Rows.Count == 0)
+        {
+            await KargatuErreserbakAsync();
+        }
+        else if (_tabs.SelectedTab == _tabBonoak && _azkenBonoak.Count == 0)
+        {
+            await KargatuBonoakAsync();
+        }
     }
 
     // =========================================================================
@@ -352,24 +484,6 @@ public class MainForm : Form
     // =========================================================================
     // API ERAGIKETAK ETA DATU KARGAK
     // =========================================================================
-    private async Task EgiaztatuKonexioaAsync()
-    {
-        SetStatus("API konexioa egiaztatzen...");
-        var (konektatuta, mezua) = await _api.EgiaztatuKonexioaAsync();
-        if (konektatuta)
-        {
-            _lblApiEgoera.Text = $"API Helbidea: {_api.BaseUrl} | Egoera: KONEKTATUTA (OK)";
-            _lblApiEgoera.ForeColor = Color.FromArgb(46, 204, 113);
-            SetStatus("APIa konektatuta eta erantzuteko prest.");
-        }
-        else
-        {
-            _lblApiEgoera.Text = $"API Helbidea: {_api.BaseUrl} | Egoera: DESKONEKTATUTA ({mezua})";
-            _lblApiEgoera.ForeColor = Color.FromArgb(231, 76, 60);
-            SetStatus("Kontuz: ezin izan da APIarekin konektatu. Ziurtatu 'API_kiroldegia_db' martxan dagoela.");
-        }
-    }
-
     private async Task KargatuDatuGuztiakAsync()
     {
         await KargatuBazkideakAsync();
@@ -386,6 +500,7 @@ public class MainForm : Form
         var res = await _api.LortuBazkideakAsync(barne);
         if (res.Arrakasta && res.DatuZerrenda != null)
         {
+            MarkatuKonektatuta();
             _azkenBazkideak = res.DatuZerrenda;
             _gridBazkideak.DataSource = null;
             _gridBazkideak.DataSource = _azkenBazkideak;
@@ -394,6 +509,10 @@ public class MainForm : Form
         }
         else
         {
+            if (res.StatusCode == 503 || res.Mezua.Contains("Sare-errorea") || res.Mezua.Contains("konektatu"))
+            {
+                MarkatuDeskonektatuta(res.Mezua);
+            }
             SetStatus($"Errorea bazkideak kargatzean: {FormatMezua(res)}");
         }
     }
@@ -407,6 +526,7 @@ public class MainForm : Form
             var res = await _api.SortuBazkideaAsync(dlg.EmaitzaDTO);
             if (res.Arrakasta)
             {
+                MarkatuKonektatuta();
                 MessageBox.Show("Bazkidea arrakastaz sortu da!", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 await KargatuBazkideakAsync();
                 await KargatuBonoakAsync();
@@ -440,6 +560,7 @@ public class MainForm : Form
             var res = await _api.EzabatuBazkideaAsync(b.Id, hard);
             if (res.Arrakasta)
             {
+                MarkatuKonektatuta();
                 MessageBox.Show("Bazkidea arrakastaz ezabatu da.", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 await KargatuBazkideakAsync();
             }
@@ -463,6 +584,7 @@ public class MainForm : Form
         var res = await _api.BerreskuratuBazkideaAsync(b.Id);
         if (res.Arrakasta)
         {
+            MarkatuKonektatuta();
             MessageBox.Show("Bazkidea arrakastaz berreskuratu da!", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
             await KargatuBazkideakAsync();
         }
@@ -481,6 +603,7 @@ public class MainForm : Form
         var res = await _api.LortuPistakAsync(barne);
         if (res.Arrakasta && res.DatuZerrenda != null)
         {
+            MarkatuKonektatuta();
             _azkenPistak = res.DatuZerrenda;
             _gridPistak.DataSource = null;
             _gridPistak.DataSource = _azkenPistak;
@@ -489,6 +612,10 @@ public class MainForm : Form
         }
         else
         {
+            if (res.StatusCode == 503 || res.Mezua.Contains("Sare-errorea") || res.Mezua.Contains("konektatu"))
+            {
+                MarkatuDeskonektatuta(res.Mezua);
+            }
             SetStatus($"Errorea pistak kargatzean: {FormatMezua(res)}");
         }
     }
@@ -502,6 +629,7 @@ public class MainForm : Form
             var res = await _api.SortuPistaAsync(dlg.EmaitzaDTO);
             if (res.Arrakasta)
             {
+                MarkatuKonektatuta();
                 MessageBox.Show("Pista arrakastaz sortu da!", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 await KargatuPistakAsync();
             }
@@ -534,6 +662,7 @@ public class MainForm : Form
             var res = await _api.EzabatuPistaAsync(p.Id, hard);
             if (res.Arrakasta)
             {
+                MarkatuKonektatuta();
                 MessageBox.Show("Pista arrakastaz ezabatu da.", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 await KargatuPistakAsync();
             }
@@ -557,6 +686,7 @@ public class MainForm : Form
         var res = await _api.BerreskuratuPistaAsync(p.Id);
         if (res.Arrakasta)
         {
+            MarkatuKonektatuta();
             MessageBox.Show("Pista arrakastaz berreskuratu da!", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
             await KargatuPistakAsync();
         }
@@ -575,6 +705,7 @@ public class MainForm : Form
         var res = await _api.LortuErreserbakAsync(barne);
         if (res.Arrakasta && res.DatuZerrenda != null)
         {
+            MarkatuKonektatuta();
             _gridErreserbak.DataSource = null;
             _gridErreserbak.DataSource = res.DatuZerrenda;
             MargotuEzabatuak(_gridErreserbak);
@@ -582,6 +713,10 @@ public class MainForm : Form
         }
         else
         {
+            if (res.StatusCode == 503 || res.Mezua.Contains("Sare-errorea") || res.Mezua.Contains("konektatu"))
+            {
+                MarkatuDeskonektatuta(res.Mezua);
+            }
             SetStatus($"Errorea erreserbak kargatzean: {FormatMezua(res)}");
         }
     }
@@ -601,6 +736,7 @@ public class MainForm : Form
             var res = await _api.SortuErreserbaAsync(dlg.EmaitzaDTO, dlg.EmaitzaDTO.Itxaron);
             if (res.Arrakasta)
             {
+                MarkatuKonektatuta();
                 MessageBox.Show("Erreserba arrakastaz gorde da!", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 await KargatuErreserbakAsync();
                 await KargatuBazkideakAsync();
@@ -635,6 +771,7 @@ public class MainForm : Form
             var res = await _api.EzabatuErreserbaAsync(e.Id, hard);
             if (res.Arrakasta)
             {
+                MarkatuKonektatuta();
                 MessageBox.Show("Erreserba arrakastaz ezabatu da.", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 await KargatuErreserbakAsync();
             }
@@ -658,6 +795,7 @@ public class MainForm : Form
         var res = await _api.BerreskuratuErreserbaAsync(e.Id);
         if (res.Arrakasta)
         {
+            MarkatuKonektatuta();
             MessageBox.Show("Erreserba arrakastaz berreskuratu da!", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
             await KargatuErreserbakAsync();
         }
@@ -682,6 +820,7 @@ public class MainForm : Form
             var res = await _api.GarbituErreserbakAsync();
             if (res.Arrakasta)
             {
+                MarkatuKonektatuta();
                 MessageBox.Show("Erreserba guztiak arrakastaz garbitu dira.", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 await KargatuErreserbakAsync();
             }
@@ -700,6 +839,7 @@ public class MainForm : Form
         var res = await _api.LortuBonoakAsync();
         if (res.Arrakasta && res.DatuZerrenda != null)
         {
+            MarkatuKonektatuta();
             _azkenBonoak = res.DatuZerrenda;
             _gridBonoak.DataSource = null;
             _gridBonoak.DataSource = _azkenBonoak;
@@ -708,6 +848,10 @@ public class MainForm : Form
         }
         else
         {
+            if (res.StatusCode == 503 || res.Mezua.Contains("Sare-errorea") || res.Mezua.Contains("konektatu"))
+            {
+                MarkatuDeskonektatuta(res.Mezua);
+            }
             SetStatus($"Errorea bonoak kargatzean: {FormatMezua(res)}");
         }
     }
@@ -728,6 +872,7 @@ public class MainForm : Form
             var res = await _api.KargatuSaioakAsync(dlg.AukeratutakoEmaila, dlg.AukeratutakoSaioak);
             if (res.Arrakasta)
             {
+                MarkatuKonektatuta();
                 MessageBox.Show("Bonoaren saioak arrakastaz eguneratu dira!", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 await KargatuBonoakAsync();
                 await KargatuBazkideakAsync();
