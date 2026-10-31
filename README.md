@@ -1,71 +1,90 @@
-# Kiroldegia Erreserbak - C# Terminala (REST API Bezero Modularra)
+# Kiroldegia Erreserbak - C# Bezeroa (Terminala eta Interfaze Grafikoa - GUI)
 
-Ordiziako Majori Kiroldegiko erreserbak kudeatzeko C# kontsola-aplikazio modularra (.NET 10.0).
+Ordiziako Majori Kiroldegiko erreserbak kudeatzeko C# aplikazio modularra (.NET 10.0-windows).
 
-Aplikazio honek ez du datu-basera zuzenean konektatzen; horren ordez, API_kiroldegia_db REST API zerbitzariaren bidez komunikatzen da HTTP (HttpClient) erabiliz.
+Aplikazio honek **bi exekuzio modu** ditu bateragarritasun osoz:
+1. **Terminal modua (Kontsola / CLI):** Jatorrizko testu-menua, arina eta azkarra.
+2. **Interfaze Grafikoa (GUI - Windows Forms):** Leiho bisuala taula dinamikoekin (DataGridView), fitxekin (Bazkideak, Pistak, Erreserbak, Bonoak), botoiekin eta formulario laguntzaileekin.
+
+Aplikazioak ez du datu-basera zuzenean konektatzen; horren ordez, `API_kiroldegia_db` REST API zerbitzariaren bidez komunikatzen da HTTP (`HttpClient`) bidez, JSON datuak trukatuz.
 
 ---
 
 ## 1. Arkitektura Orokorra
 
-Aplikazioak geruzen araberako banaketa jarraitzen du:
+Aplikazioak geruzen araberako banaketa garbia jarraitzen du, bezeroaren bi moduek zerbitzu- eta eredu-geruza bera partekatuz:
 
 ```text
-+-------------------------------------------------------+
-|        kiroldegia_erreserbak_c_sharp_terminala        |
-|               (C# Kontsola Bezeroa)                   |
-|                                                       |
-|   +--------------+    +---------------------------+   |
-|   |  Program.cs  |--->| Kudeatzaileak (UI/Logika) |   |
-|   +--------------+    +---------------------------+   |
-|                                     |                 |
-|                                     v                 |
-|                       +---------------------------+   |
-|                       |    Services (API Client)  |   |
-|                       +---------------------------+   |
-+-------------------------------------|-----------------+
-                                      |
-                                      | HTTP JSON (GET, POST, PUT, DELETE)
-                                      v http://localhost:5089/api/
-+-------------------------------------------------------+
-|                   API_kiroldegia_db                   |
-|              (ASP.NET Core REST Web API)              |
-|                                                       |
-|  - Transakzioak (BeginTransaction, Commit, Rollback)  |
-|  - Blokeo pesimistak (SELECT ... FOR UPDATE)          |
-|  - Konkurrentzia eta isolamendua (Read Committed)     |
-|  - Salbuespenen kontrola (MySQL 1062, 1213, 1205)     |
-+-------------------------------------------------------+
-                                      |
-                                      | ADO.NET (MySqlConnector)
-                                      v
-+-------------------------------------------------------+
-|                MySQL InnoDB Datu-Basea                |
-|                     (kiroldegia)                      |
-+-------------------------------------------------------+
++-------------------------------------------------------------------------+
+|                kiroldegia_erreserbak_c_sharp_terminala                  |
+|                                                                         |
+|   +-----------------------+              +--------------------------+   |
+|   |  Terminal Modua (CLI) |              |  Interfaze Grafikoa (GUI)|   |
+|   |    (Kudeatzaileak)    |              |     (Windows Forms)      |   |
+|   +-----------------------+              +--------------------------+   |
+|               \                                      /                  |
+|                +------------------+-----------------+                   |
+|                                   v                                     |
+|                       +---------------------------+                     |
+|                       |    Services (API Client)  |                     |
+|                       +---------------------------+                     |
+|                                   |                                     |
+|                                   v                                     |
+|                       +---------------------------+                     |
+|                       |     Models (DTO / JSON)   |                     |
+|                       +---------------------------+                     |
++-----------------------------------|-------------------------------------+
+                                    |
+                                    | HTTP JSON (GET, POST, PUT, DELETE)
+                                    v http://localhost:5089/api/
++-------------------------------------------------------------------------+
+|                           API_kiroldegia_db                             |
+|                      (ASP.NET Core REST Web API)                        |
+|                                                                         |
+|  - Transakzioak (BeginTransaction, Commit, Rollback)                    |
+|  - Blokeo pesimistak (SELECT ... FOR UPDATE)                            |
+|  - Konkurrentzia eta isolamendua (Read Committed)                       |
+|  - Salbuespenen kontrola (MySQL 1062, 1213, 1205)                       |
++-------------------------------------------------------------------------+
+                                    |
+                                    | ADO.NET (MySqlConnector)
+                                    v
++-------------------------------------------------------------------------+
+|                        MySQL InnoDB Datu-Basea                          |
+|                             (kiroldegia)                                |
++-------------------------------------------------------------------------+
 ```
 
-	---
+---
 
 ## 2. Proiektuaren Egitura eta Antolaketa
 
-Kodea garbi, irakurgarri eta erantzukizun bakarrarekin (Single Responsibility Principle) antolatzeko, fitxategiak honela banatu dira:
+Kodea garbi, irakurgarri eta erantzukizun bakarrarekin (Single Responsibility Principle) antolatzeko, fitxategiak honela banatuta daude:
 
 ```text
 kiroldegia_erreserbak_c_sharp_terminala/
 │
-├── Program.cs                  # Menua eta aplikazioaren ziklo nagusia soilik
+├── Program.cs                  # Hasierako abiarazlea: CLI/GUI hautatzailea eta argumentu-analisia
 │
-├── Kudeatzaileak/              # Erabiltzailearen elkarrekintza eta kontsolako menuak
+├── GUI/                        # Interfaze Grafikoa (Windows Forms)
+│   ├── GuiLauncher.cs          # GUI hari seguruan (STA) abiarazteko arduraduna
+│   ├── MainForm.cs             # Leiho nagusia fitxekin: Bazkideak, Pistak, Erreserbak, Bonoak
+│   └── Dialogs/                # Datuak sartzeko elkarrizketa-koadroak
+│       ├── BazkideBerriaDialog.cs
+│       ├── PistaBerriaDialog.cs
+│       ├── ErreserbaBerriaDialog.cs
+│       └── BonoKargatuDialog.cs
+│
+├── Kudeatzaileak/              # Terminaleko menuak eta logika (CLI)
 │   ├── BazkideaKudeatzailea.cs # Bazkideen azpimenua, zerrendatzea, sortzea, ezabaketak eta berreskuratzea
 │   ├── PistaKudeatzailea.cs    # Pisten azpimenua, zerrendatzea, sortzea, ezabaketak eta berreskuratzea
 │   ├── ErreserbaKudeatzailea.cs# Erreserben formularioa, zerrendatzea, ezabaketak, berreskuratzea eta garbiketa
 │   ├── BonoaKudeatzailea.cs    # Bonoen azpimenua, saldoak ikustea, kargatzea eta sortzea
-│   └── KontsolaLaguntzailea.cs # Kontsolako pantaila-garbiketa, izenburuak eta API emaitzak koloretan formatzea
+│   └── KontsolaLaguntzailea.cs # Kontsolako pantaila-garbiketa, izenburuak eta formatzea
 │
 ├── Services/                   # REST API bezeroa (partial class KiroldegiaApiClient bidez banatua)
 │   ├── ApiResult.cs            # ApiResult<T> erantzun generikoaren bilgarria
-│   ├── KiroldegiaApiClient.cs  # HttpClient oinarria, BaseUrl, konexio-egiaztapena eta HTTP metodo laguntzaileak
+│   ├── KiroldegiaApiClient.cs  # HttpClient oinarria, BaseUrl, konexio-egiaztapena eta laguntzaileak
 │   ├── BazkideaApiClient.cs    # Bazkideen HTTP eskaerak (/api/bazkideak)
 │   ├── PistaApiClient.cs       # Pisten HTTP eskaerak (/api/pistak)
 │   ├── ErreserbaApiClient.cs   # Erreserben HTTP eskaerak (/api/erreserbak)
@@ -81,73 +100,57 @@ kiroldegia_erreserbak_c_sharp_terminala/
 
 ---
 
-## 3. Menu Nagusiko Aukerak
+## 3. Aplikazioa Bi Modutara Abiaraztea
 
-1. **Erreserba berria egin (POST /api/erreserbak):**
+Aplikazioa nahi den moduan abiaraz daiteke:
 
-   - Bazkidea aukeratu (saldoak ikusgai).
-   - Pista aukeratu (desgaituta daudenak adierazita).
-   - Data eta ordua zehaztu.
-   - Bonoaren bidez ordaintzeko aukera (saio bat deskontatuz transakzioan).
-   - Konkurrentzia-blokeoa simulatzeko geldialdia ezartzeko aukera (milisegundotan).
-2. **Egun dauden erreserbak ikusi (GET /api/erreserbak):**
+### A) Interaktiboki (Menu bidez aukeratuz)
+Argumenturik gabe abiarazten bada, hasieran aukeraketa eskaintzen du:
+```bash
+dotnet run
+```
+```text
+Aukeratu aplikazioa nola exekutatu nahi duzun:
+  1. Terminal modua (Kontsola / CLI)
+  2. Interfaze Grafikoa (GUI - Windows Forms)
+  0. Irten
+```
 
-   - Erreserba aktiboak berdez eta Soft-Delete bidez ezabatutakoak grisez.
-3. **Erreserba ezabatu - Soft Delete (DELETE /api/erreserbak/{id}?hard=false):**
+### B) Zuzenean Interfaze Grafikoan (GUI)
+Komando-lerrotik `--gui` edo `-g` pasatuta:
+```bash
+dotnet run -- --gui
+```
 
-   - Erreserba logikoki desgaitzen du (ezabatua=true), pista libre utziz beste erreserbentzat.
-4. **Erreserba ezabatu - Hard Delete (DELETE /api/erreserbak/{id}?hard=true):**
+### C) Zuzenean Terminal Moduan (CLI)
+Komando-lerrotik `--cli` edo `-c` pasatuta:
+```bash
+dotnet run -- --cli
+```
 
-   - Erreserba behin betiko ezabatzen du datu-basetik.
-5. **Soft-Delete erreserba berreskuratu (PUT /api/erreserbak/{id}/restore):**
-
-   - Ezeztatutako erreserba berrezartzen du, betiere ordu horretan pista libre badago eta pista bera aktibo badago.
-6. **Pisten Kudeaketa (PistaKudeatzailea):**
-
-   - Pistak zerrendatu.
-   - Pista berria sortu (POST /api/pistak).
-   - Soft Delete: pista eta harekin erlazionatutako erreserbak batera desgaitu (DELETE /api/pistak/{id}?hard=false).
-   - Hard Delete: pista eta erreserbak behin betiko ezabatu (DELETE /api/pistak/{id}?hard=true).
-   - Restore: desgaitutako pista berreskuratu (PUT /api/pistak/{id}/restore).
-7. **Bazkideen Kudeaketa (BazkideaKudeatzailea):**
-
-   - Bazkideak zerrendatu (saldoekin).
-   - Bazkide berria sortu (POST /api/bazkideak).
-   - Soft Delete (DELETE /api/bazkideak/{id}?hard=false).
-   - Hard Delete: erreserbarik ez badu soilik ezabatu (DELETE /api/bazkideak/{id}?hard=true).
-   - Restore: desgaitutako bazkidea berreskuratu (PUT /api/bazkideak/{id}/restore).
-8. **Bonoen Kudeaketa (BonoaKudeatzailea):**
-
-   - Bonoen zerrenda eta saldoak ikusi (GET /api/bonoak).
-   - Bonoari saioak gehitu transakzio seguru batean (PUT /api/bonoak/{email}/kargatu).
-   - Bono berria sortu edo erosi (POST /api/bonoak).
-9. **Erreserba taula garbitu (DELETE /api/erreserbak/garbitu):**
-
-   - Erreserba guztiak hustu probak hutsetik hasteko.
-10. **Irten.**
+### D) Terminaletik Interfaze Grafikoara salto egitea
+Terminaleko menuan zaudela, `G` sakatuta Windows Forms leihoa irekitzen da. Leihoa ixtean, terminalera itzultzen da automatikoki.
 
 ---
 
-## 4. Abiarazteko Argibideak
+## 4. Funtzionalitate Nagusiak
 
-### 1. Backend APIa martxan jarri
+Bi moduek (CLI eta GUI) kudeaketa osoa eskaintzen dute:
 
-Terminaleko bezeroak funtziona dezan, backend APIak entzuten egon behar du:
-
-```bash
-cd ../API_kiroldegia_db/API_kiroldegia_db
-dotnet run
-```
-
-APIa lehenetsita http://localhost:5089 helbidean jarriko da martxan.
-
-### 2. Terminaleko aplikazioa abiarazi
-
-Beste kontsola batean:
-
-```bash
-cd kiroldegia_erreserbak_c_sharp_terminala
-dotnet run
-```
-
-Oharra: APIa beste helbide edo ataka batean egonez gero, KIROLDEGIA_API_URL ingurune-aldagaia erabil daiteke (adibidez: set KIROLDEGIA_API_URL=http://localhost:5262).
+1. **Erreserben Kudeaketa:**
+   - Erreserba berria egin (pista, bazkidea, data, ordua, bonoa erabili ala ez).
+   - Zerrenda osoa ikusi (aktiboak zein ezabatuak).
+   - **Soft Delete:** Erreserba logikoki ezeztatu (pista libre uzten du, baina erregistroa gordetzen da).
+   - **Hard Delete:** Erreserba behin betiko ezabatu.
+   - **Restore:** Ezeztatutako erreserba berreskuratu (pista libre badago).
+   - Taula garbitu (probetarako).
+2. **Pisten Kudeaketa:**
+   - Pistak zerrendatu eta pista berriak gehitu.
+   - Soft Delete, Restore eta Hard Delete.
+3. **Bazkideen Kudeaketa:**
+   - Bazkideak zerrendatu (bonoko saldoekin).
+   - Bazkide berriak sortu (hasierako bono aukerarekin).
+   - Soft Delete, Restore eta Hard Delete.
+4. **Bonoen Kudeaketa:**
+   - Bonoen saldoak kontsultatu.
+   - Bonoari saioak kargatu transakzio seguruan.
