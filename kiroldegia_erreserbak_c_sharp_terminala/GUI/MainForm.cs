@@ -37,6 +37,7 @@ public class MainForm : Form
     private readonly CheckBox _chkBazkideakEzabatuak = new();
     private readonly CheckBox _chkPistakEzabatuak = new();
     private readonly CheckBox _chkErreserbakEzabatuak = new();
+    private readonly CheckBox _chkBonoakEzabatuak = new();
 
     // Beheko egoera barra
     private readonly StatusStrip _statusStrip = new();
@@ -438,7 +439,22 @@ public class MainForm : Form
         var btnKargatuSaioak = SortuBotoia("Saioak Kargatu / Bonoa Sortu", Color.FromArgb(39, 174, 96));
         btnKargatuSaioak.Click += async (s, e) => await KargatuBonoSaioakAsync();
 
-        pnlBarra.Controls.AddRange([btnKargatu, btnKargatuSaioak]);
+        var btnSoftDelete = SortuBotoia("Soft Delete (Ezgaitu)", Color.FromArgb(230, 126, 34));
+        btnSoftDelete.Click += async (s, e) => await EzabatuBonoaHautatuaAsync(hard: false);
+
+        var btnBerreskuratu = SortuBotoia("Berreskuratu", Color.FromArgb(46, 204, 113));
+        btnBerreskuratu.Click += async (s, e) => await BerreskuratuBonoaHautatuaAsync();
+
+        var btnHardDelete = SortuBotoia("Hard Delete (Behin betiko)", Color.FromArgb(192, 57, 43));
+        btnHardDelete.Click += async (s, e) => await EzabatuBonoaHautatuaAsync(hard: true);
+
+        _chkBonoakEzabatuak.Text = "Erakutsi ezabatuak";
+        _chkBonoakEzabatuak.Checked = true;
+        _chkBonoakEzabatuak.AutoSize = true;
+        _chkBonoakEzabatuak.Margin = new Padding(12, 8, 6, 6);
+        _chkBonoakEzabatuak.CheckedChanged += async (s, e) => await KargatuBonoakAsync();
+
+        pnlBarra.Controls.AddRange([btnKargatu, btnKargatuSaioak, btnSoftDelete, btnBerreskuratu, btnHardDelete, _chkBonoakEzabatuak]);
 
         KonfiguratuGrid(_gridBonoak);
         _gridBonoak.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Bazkidearen Emaila", DataPropertyName = "Emaila", Width = 260 });
@@ -875,7 +891,8 @@ public class MainForm : Form
     private async Task KargatuBonoakAsync()
     {
         SetStatus("Bonoak kargatzen...");
-        var res = await _api.LortuBonoakAsync();
+        bool barne = _chkBonoakEzabatuak.Checked;
+        var res = await _api.LortuBonoakAsync(barne);
         if (res.Arrakasta && res.DatuZerrenda != null)
         {
             MarkatuKonektatuta();
@@ -892,6 +909,62 @@ public class MainForm : Form
                 MarkatuDeskonektatuta(res.Mezua);
             }
             SetStatus($"Errorea bonoak kargatzean: {FormatMezua(res)}");
+        }
+    }
+
+    private async Task EzabatuBonoaHautatuaAsync(bool hard)
+    {
+        if (_gridBonoak.CurrentRow?.DataBoundItem is not BonoDTO bo)
+        {
+            MessageBox.Show("Aukeratu bono bat zerrendatik lehenik.", "Abisua", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        string mota = hard ? "BEHIN BETIKO (Hard Delete)" : "LOGIKOKI (Soft Delete)";
+        var confirm = MessageBox.Show(
+            $"Ziur zaude '{bo.Emaila}' bonoari ({bo.Saioak} saio) {mota} ezabaketa aplikatu nahi diozula?",
+            "Ezabatu berretsi",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (confirm == DialogResult.Yes)
+        {
+            SetStatus($"Bonoa ezabatzen ({mota})...");
+            var res = await _api.EzabatuBonoaAsync(bo.Emaila, hard);
+            if (res.Arrakasta)
+            {
+                MarkatuKonektatuta();
+                MessageBox.Show("Bonoa arrakastaz ezabatu da.", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                await KargatuBonoakAsync();
+            }
+            else
+            {
+                MessageBox.Show($"Errorea bonoa ezabatzean:\n{FormatMezua(res)}", "Errorea", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                SetStatus($"Errorea: {FormatMezua(res)}");
+            }
+        }
+    }
+
+    private async Task BerreskuratuBonoaHautatuaAsync()
+    {
+        if (_gridBonoak.CurrentRow?.DataBoundItem is not BonoDTO bo)
+        {
+            MessageBox.Show("Aukeratu bono bat zerrendatik lehenik.", "Abisua", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        SetStatus("Bonoa berreskuratzen...");
+        var res = await _api.BerreskuratuBonoaAsync(bo.Emaila);
+        if (res.Arrakasta)
+        {
+            MarkatuKonektatuta();
+            MessageBox.Show("Bonoa arrakastaz berreskuratu da!", "Arrakasta", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            await KargatuBonoakAsync();
+        }
+        else
+        {
+            MessageBox.Show($"Errorea bonoa berreskuratzean:\n{FormatMezua(res)}", "Errorea", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            SetStatus($"Errorea: {FormatMezua(res)}");
         }
     }
 
