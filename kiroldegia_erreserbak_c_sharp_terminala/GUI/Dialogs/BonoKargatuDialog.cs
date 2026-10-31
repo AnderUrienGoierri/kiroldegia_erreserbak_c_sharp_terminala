@@ -86,3 +86,4 @@ public class BonoKargatuDialog : Form
         Close();
     }
 }
+
